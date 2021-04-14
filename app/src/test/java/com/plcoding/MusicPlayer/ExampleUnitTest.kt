@@ -1,4 +1,4 @@
-package com.plcoding.spotifycloneyt
+package com.plcoding.MusicPlayer
 
 import org.junit.Test
 
