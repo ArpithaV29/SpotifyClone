@@ -1,8 +1,13 @@
 package com.plcoding.MusicPlayer.ui
 
+import android.content.Context
+import android.content.DialogInterface
+import android.content.Intent
+import android.hardware.biometrics.BiometricPrompt
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.support.v4.media.session.PlaybackStateCompat
+import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.core.view.isVisible
 import androidx.navigation.fragment.findNavController
@@ -19,6 +24,10 @@ import com.plcoding.MusicPlayer.ui.viewmodels.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.android.synthetic.main.activity_main.*
 import javax.inject.Inject
+import android.os.CancellationSignal
+import android.os.Build
+import androidx.annotation.RequiresApi
+import androidx.core.app.ActivityCompat
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -35,9 +44,29 @@ class MainActivity : AppCompatActivity() {
 
     private var playbackState: PlaybackStateCompat? = null
 
+    private var cancellationSignal: CancellationSignal? = null
+    private val authenticationCallback: BiometricPrompt.AuthenticationCallback
+    get() =
+        @RequiresApi(Build.VERSION_CODES.P)
+        object: BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) {
+                super.onAuthenticationError(errorCode, errString)
+                notifyUser("Authentication Error: $errString")
+                finishAffinity()
+            }
+
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult?) {
+                super.onAuthenticationSucceeded(result)
+                notifyUser("Authentication succeeded")
+            }
+        }
+
+
+    @RequiresApi(Build.VERSION_CODES.P)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
         subscribeToObservers()
 
         vpSong.adapter = swipeSongAdapter
@@ -72,6 +101,14 @@ class MainActivity : AppCompatActivity() {
                 else -> showBottomBar()
             }
         }
+
+        checkBiometricSupport()
+        val biometricPrompt = BiometricPrompt.Builder(this)
+            .setTitle("Fingerprint Sensor")
+            .setDescription("This app uses fingerprint authentication to keep your data secure")
+            .setNegativeButton("Cancel", this.mainExecutor, DialogInterface.OnClickListener{dialog, which -> finishAffinity()}).build()
+
+        biometricPrompt.authenticate(getCancellationSignal(), mainExecutor, authenticationCallback)
     }
 
     private fun hideBottomBar(){
@@ -151,5 +188,37 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun notifyUser(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun getCancellationSignal(): CancellationSignal {
+        cancellationSignal = CancellationSignal()
+        cancellationSignal?.setOnCancelListener {
+            notifyUser("Authentication was cancelled by the user")
+        }
+
+        return cancellationSignal as CancellationSignal
+    }
+
+    private fun checkBiometricSupport(): Boolean {
+
+        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
+
+        if(!keyguardManager.isKeyguardSecure) {
+            notifyUser("Fingerprint Authentication has not been enabled in settings")
+            return false
+        }
+
+        if(ActivityCompat.checkSelfPermission(this, android.Manifest.permission.USE_BIOMETRIC) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            notifyUser("Fingerprint Authentication permission is not enabled")
+            return false
+        }
+
+        return if(packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_FINGERPRINT)) {
+            true
+        } else true
     }
 }
